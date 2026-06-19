@@ -230,6 +230,7 @@ function geocodeAll(){
     }
     const p=PLACES[i++]; const ck=p.address||p.query;
     document.getElementById('status').textContent='위치 찾는 중... '+i+'/'+PLACES.length;
+    if(p.lat&&p.lng){ place(p,p.lat,p.lng); ok++; return next(); }   // 좌표 직접지정
     if(cache[ck]){ place(p,cache[ck].lat,cache[ck].lng); ok++; return next(); }
     geocodePlace(p,function(res){
       if(res){ cache[ck]={lat:res[0],lng:res[1]}; place(p,res[0],res[1]); ok++; }

@@ -64,6 +64,38 @@ for r in rows:
         "image": img,
     })
 
+# ── 삭제할 게시물 (코스 안내 등 지도에 부적합) ──
+DROP_IDS = {85}
+data = [d for d in data if d["id"] not in DROP_IDS]
+
+# ── 주소를 직접 보완한 장소 (도로명주소 → 주소검색으로 정확) ──
+ADDR_OVERRIDE = {
+    105: "서울 동대문구 천호대로45나길 52",   # 백억(100억)분식
+    137: "서울 동대문구 천호대로45나길 52",
+}
+# ── 지오코딩이 실패한 장소: 검색용 별칭(query) 지정 ──
+QUERY_OVERRIDE = {
+    10:  "청계한신휴플러스아파트",     # 단지 내 놀이터 → 아파트로 검색
+    23:  "청계한신휴플러스아파트",
+    102: "힐스테이트청계아파트",       # 103동 앞 놀이터 → 아파트로 검색
+    104: "청량꿈숲",                  # 띄어쓰기 제거
+    119: "더베이글샵 휘경",
+    129: "그라시엘 어린이집 청량리",
+    175: "이문어린이도서관",          # 군더더기 제거
+}
+# ── 그래도 안 잡히면 좌표 직접지정 (id: (위도, 경도)) ──
+COORD_OVERRIDE = {
+    # 예) 105: (37.5701, 127.0568),
+}
+for d in data:
+    if d["id"] in ADDR_OVERRIDE:
+        d["address"] = ADDR_OVERRIDE[d["id"]]
+        d["query"] = ADDR_OVERRIDE[d["id"]]
+    if d["id"] in QUERY_OVERRIDE:
+        d["query"] = QUERY_OVERRIDE[d["id"]]
+    if d["id"] in COORD_OVERRIDE:
+        d["lat"], d["lng"] = COORD_OVERRIDE[d["id"]]
+
 print("추출:", len(data), "/ 스킵:", len(skipped))
 print("주소있음:", sum(1 for d in data if d["address"]), "/ 사진있음:", sum(1 for d in data if d["image"]))
 print("학년분포:", dict(Counter(d["grade"] for d in data)))
