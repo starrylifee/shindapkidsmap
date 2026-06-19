@@ -52,7 +52,18 @@
   #detail .tags{margin:0 0 14px}
   #detail .tag{font-size:12px;padding:2px 10px}
   #map{flex:1;position:relative}
-  #status{position:absolute;top:10px;left:10px;z-index:5;background:rgba(43,43,64,.9);color:#fff;font-size:12px;padding:6px 12px;border-radius:6px}
+  #status{position:absolute;bottom:14px;left:10px;z-index:5;background:rgba(43,43,64,.9);color:#fff;font-size:12px;padding:6px 12px;border-radius:6px}
+  /* 네이버 지도식 상단 태그 플로팅 바 (가로 스크롤) */
+  #tagbar{position:absolute;top:10px;left:10px;right:10px;z-index:5;
+    display:flex;gap:7px;overflow-x:auto;padding:2px 2px 7px;
+    scrollbar-width:none;-ms-overflow-style:none}
+  #tagbar::-webkit-scrollbar{display:none}
+  .tchip{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;
+    background:#fff;border:1px solid #dcdce0;border-radius:18px;padding:6px 13px;
+    font-size:13px;font-weight:600;color:#333;cursor:pointer;white-space:nowrap;
+    box-shadow:0 1px 5px rgba(0,0,0,.18);user-select:none}
+  .tchip:hover{background:#f3f3f8}
+  .tchip.active{background:#2b2b40;color:#fff;border-color:#2b2b40}
   #detail{position:absolute;top:0;right:0;width:330px;height:100%;background:#fff;box-shadow:-2px 0 12px rgba(0,0,0,.12);transform:translateX(100%);transition:.25s;z-index:6;overflow:auto}
   #detail.open{transform:translateX(0)}
   #detail .close{position:absolute;top:8px;right:10px;font-size:22px;cursor:pointer;color:#888;z-index:2}
@@ -90,7 +101,8 @@
       box-shadow:2px 0 14px rgba(0,0,0,.3)}
     #side.open{transform:translateX(0)}
     #sideToggle{display:block}
-    #status{top:56px}
+    #tagbar{left:62px}
+    #status{bottom:44px}
     #footM{display:block;position:fixed;left:0;right:0;bottom:0;z-index:20;
       background:rgba(255,255,255,.95);border-top:1px solid #ddd;
       font-size:12px;color:#666;text-align:center;padding:7px}
@@ -111,6 +123,7 @@
   </div>
   <div id="map">
     <button id="sideToggle" onclick="toggleSide()">☰ 목록</button>
+    <div id="tagbar"></div>
     <div id="status">불러오는 중...</div>
     <div id="detail"><span class="close" onclick="closeDetail()">×</span>
       <img id="dimg" alt=""/><div class="body">
@@ -142,7 +155,11 @@
 const PLACES = __DATA__;
 const GRADES = ["1학년","2학년","3학년","4학년","5학년","6학년"];
 const GCOLOR = {"1학년":"#e6194b","2학년":"#3cb44b","3학년":"#4363d8","4학년":"#f58231","5학년":"#911eb4","6학년":"#008080"};
-let map, geocoder, ps, markers=[], activeGrade="전체", kw="", showFailedOnly=false;
+let map, geocoder, ps, markers=[], activeGrade="전체", kw="", activeTag="", showFailedOnly=false;
+const TAG_ICON={"도서관":"📚","공원":"🌳","숲·산":"⛰️","산책":"🚶","놀이터":"🛝",
+  "물놀이":"🏊","맛집":"🍽️","분식":"🍢","카페·디저트":"☕","시장":"🛒","박물관·전시":"🖼️",
+  "역사·문화":"🏛️","체험·교육":"🧪","진로·직업":"💼","운동·스포츠":"⚽","실내놀이":"🎮",
+  "문구점":"✏️","대학교":"🎓","생활편의":"🏪","무료":"🆓"};
 
 function saveKey(){
   const k=document.getElementById('keyin').value.trim();
@@ -164,7 +181,7 @@ function init(){
     center:new kakao.maps.LatLng(37.574,127.05), level:6});
   geocoder=new kakao.maps.services.Geocoder();
   ps=new kakao.maps.services.Places();
-  buildFilters(); render();
+  buildFilters(); buildTagbar(); render();
   document.getElementById('q').addEventListener('input',function(e){kw=e.target.value.trim();render();});
   document.addEventListener('keydown',function(e){
     if(e.key==='ArrowDown'){ e.preventDefault(); selectIndex(Math.min(cursor+1, view.length-1)); }
@@ -189,15 +206,32 @@ function buildFilters(){
 function visible(p){
   if(showFailedOnly) return !!p._noloc;
   if(activeGrade!=="전체" && p.grade!==activeGrade) return false;
+  if(activeTag && (p.tags||[]).indexOf(activeTag)<0) return false;
   if(kw && !((p.name+p.reason+p.address+(p.tags||[]).join(' ')).includes(kw))) return false;
   return true;
 }
-// 태그 클릭 → 그 태그로 검색
-function searchTag(tag){
-  kw=tag; activeGrade="전체";
-  document.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('active',x.dataset.g==="전체");});
-  document.getElementById('q').value=tag;
-  closeDetail(); render();
+// 상단 태그 플로팅 바 만들기 (장소 수 많은 순)
+function buildTagbar(){
+  const bar=document.getElementById('tagbar'); const cnt={};
+  PLACES.forEach(function(p){(p.tags||[]).forEach(function(t){cnt[t]=(cnt[t]||0)+1;});});
+  Object.keys(cnt).sort(function(a,b){return cnt[b]-cnt[a];}).forEach(function(t){
+    const c=document.createElement('div'); c.className='tchip'; c.dataset.t=t;
+    c.innerHTML=(TAG_ICON[t]||'🏷️')+' '+esc(t);
+    c.onclick=function(){setTag(t);};
+    bar.appendChild(c);
+  });
+}
+// 태그 선택/해제 (같은 태그 다시 누르면 해제) — 목록·상세의 태그 클릭도 공용
+function setTag(tag){
+  activeTag=(activeTag===tag)?"":tag;
+  document.querySelectorAll('#tagbar .tchip').forEach(function(x){
+    x.classList.toggle('active',x.dataset.t===activeTag);
+  });
+  const a=document.querySelector('#tagbar .tchip.active');
+  if(a) a.scrollIntoView({inline:'center',block:'nearest'});
+  closeDetail();
+  if(window.innerWidth<=720) closeSide();
+  render();
 }
 function tagHTML(p){
   if(!p.tags||!p.tags.length) return '';
@@ -218,7 +252,7 @@ function render(){
       '<div class="rs">'+esc(p.reason||p.address||'')+'</div>'+tagHTML(p);
     d.onclick=function(e){
       var t=e.target.closest('.tag');
-      if(t){ searchTag(t.dataset.t); return; }   // 태그 클릭 → 태그 검색
+      if(t){ setTag(t.dataset.t); return; }   // 태그 클릭 → 상단 바와 연동 필터
       selectIndex(idx);
     };
     list.appendChild(d); itemEls.push(d);
@@ -339,7 +373,7 @@ function openDetail(p){
   var dt=document.getElementById('dtags');
   dt.innerHTML=tagHTML(p);
   dt.querySelectorAll('.tag').forEach(function(el){
-    el.onclick=function(){searchTag(el.dataset.t);};
+    el.onclick=function(){setTag(el.dataset.t);};
   });
   document.getElementById('dreason').textContent=p.reason||'';
   const img=document.getElementById('dimg');
