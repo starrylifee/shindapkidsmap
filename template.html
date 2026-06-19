@@ -45,6 +45,12 @@
   .item .meta{font-size:11px;color:#888;margin-top:2px}
   .item .rs{font-size:12px;color:#555;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .badge{display:inline-block;font-size:10px;color:#fff;border-radius:8px;padding:1px 7px;margin-right:5px}
+  .tags{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
+  .tag{font-size:11px;color:#3a3a55;background:#ececf5;border:1px solid #dcdce8;
+    border-radius:10px;padding:1px 8px;cursor:pointer;user-select:none}
+  .tag:hover{background:#dfe0ef}
+  #detail .tags{margin:0 0 14px}
+  #detail .tag{font-size:12px;padding:2px 10px}
   #map{flex:1;position:relative}
   #status{position:absolute;top:10px;left:10px;z-index:5;background:rgba(43,43,64,.9);color:#fff;font-size:12px;padding:6px 12px;border-radius:6px}
   #detail{position:absolute;top:0;right:0;width:330px;height:100%;background:#fff;box-shadow:-2px 0 12px rgba(0,0,0,.12);transform:translateX(100%);transition:.25s;z-index:6;overflow:auto}
@@ -71,8 +77,20 @@
     transform-origin:50% 100%;animation:selSpin 1.4s linear infinite;
     filter:drop-shadow(0 3px 4px rgba(0,0,0,.35));}
   @keyframes selSpin{0%{transform:rotateY(0deg)}100%{transform:rotateY(360deg)}}
+  /* 모바일에서 목록(왼쪽 창)을 여는 버튼 + 어두운 배경 — 평소엔 숨김 */
+  #sideToggle{display:none;position:absolute;top:10px;left:10px;z-index:22;
+    background:#2b2b40;color:#fff;border:0;border-radius:8px;padding:8px 13px;
+    font-size:14px;font-weight:600;box-shadow:0 2px 6px rgba(0,0,0,.3);cursor:pointer}
+  #sideBackdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:28}
+  #sideBackdrop.show{display:block}
   @media(max-width:720px){
-    #side{display:none}
+    /* 왼쪽 창을 화면 밖 서랍(off-canvas)으로 — 버튼으로 밀어서 연다 */
+    #side{position:fixed;top:0;left:0;bottom:0;width:86%;min-width:0;max-width:340px;
+      z-index:30;transform:translateX(-100%);transition:transform .25s;
+      box-shadow:2px 0 14px rgba(0,0,0,.3)}
+    #side.open{transform:translateX(0)}
+    #sideToggle{display:block}
+    #status{top:56px}
     #footM{display:block;position:fixed;left:0;right:0;bottom:0;z-index:20;
       background:rgba(255,255,255,.95);border-top:1px solid #ddd;
       font-size:12px;color:#666;text-align:center;padding:7px}
@@ -87,20 +105,22 @@
       <p style="padding:10px 16px;margin:0">신답초 학부모회 · Padlet 모음 (<span id="cnt">0</span>곳)</p>
     </header>
     <div id="filters"></div>
-    <div id="search"><input id="q" placeholder="장소·이유 검색..."/></div>
+    <div id="search"><input id="q" placeholder="장소·이유·태그 검색 (예: 도서관, 공원, 분식, 카페)"/></div>
     <div id="list"></div>
     <div id="foot">오류 수정신고 · <a href="mailto:ssamcoder@gmail.com">ssamcoder@gmail.com</a></div>
   </div>
   <div id="map">
+    <button id="sideToggle" onclick="toggleSide()">☰ 목록</button>
     <div id="status">불러오는 중...</div>
     <div id="detail"><span class="close" onclick="closeDetail()">×</span>
       <img id="dimg" alt=""/><div class="body">
       <h2 id="dname"></h2><div class="addr" id="daddr"></div>
-      <div id="dbadge"></div><div class="reason" id="dreason"></div></div>
+      <div id="dbadge"></div><div id="dtags"></div><div class="reason" id="dreason"></div></div>
     </div>
   </div>
   <div id="footM">오류 수정신고 · <a href="mailto:ssamcoder@gmail.com">ssamcoder@gmail.com</a></div>
 </div>
+<div id="sideBackdrop" onclick="closeSide()"></div>
 
 <div id="setup">
   <div class="box">
@@ -169,8 +189,21 @@ function buildFilters(){
 function visible(p){
   if(showFailedOnly) return !!p._noloc;
   if(activeGrade!=="전체" && p.grade!==activeGrade) return false;
-  if(kw && !((p.name+p.reason+p.address).includes(kw))) return false;
+  if(kw && !((p.name+p.reason+p.address+(p.tags||[]).join(' ')).includes(kw))) return false;
   return true;
+}
+// 태그 클릭 → 그 태그로 검색
+function searchTag(tag){
+  kw=tag; activeGrade="전체";
+  document.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('active',x.dataset.g==="전체");});
+  document.getElementById('q').value=tag;
+  closeDetail(); render();
+}
+function tagHTML(p){
+  if(!p.tags||!p.tags.length) return '';
+  return '<div class="tags">'+p.tags.map(function(t){
+    return '<span class="tag" data-t="'+esc(t)+'">'+esc(t)+'</span>';
+  }).join('')+'</div>';
 }
 function toggleFailed(e){ if(e) e.preventDefault(); showFailedOnly=!showFailedOnly; render(); }
 let view=[], itemEls=[], cursor=-1;
@@ -182,8 +215,12 @@ function render(){
     d.innerHTML='<div class="nm">'+esc(p.name)+'</div>'+
       '<div class="meta"><span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span>'+
       (p._noloc?'<span class="badge" style="background:#e53935">❗위치 못 찾음</span>':'')+'</div>'+
-      '<div class="rs">'+esc(p.reason||p.address||'')+'</div>';
-    d.onclick=function(){selectIndex(idx);};
+      '<div class="rs">'+esc(p.reason||p.address||'')+'</div>'+tagHTML(p);
+    d.onclick=function(e){
+      var t=e.target.closest('.tag');
+      if(t){ searchTag(t.dataset.t); return; }   // 태그 클릭 → 태그 검색
+      selectIndex(idx);
+    };
     list.appendChild(d); itemEls.push(d);
   });
   markers.forEach(function(m){ m.marker.setMap(visible(m.place)?map:null); });
@@ -291,11 +328,19 @@ function highlight(p){
   e.marker.setMap(null);   // 기본 마커는 숨기고 애니메이션 오버레이로 대체
   selected=e;
 }
-function focusPlace(p){ if(p._pos){map.setLevel(4);map.panTo(p._pos);} openDetail(p); }
+function focusPlace(p){
+  if(window.innerWidth<=720) closeSide();   // 모바일: 장소 선택 시 목록 서랍 닫아 지도 보이기
+  if(p._pos){map.setLevel(4);map.panTo(p._pos);} openDetail(p);
+}
 function openDetail(p){
   document.getElementById('dname').textContent=p.name;
   document.getElementById('daddr').textContent=p.address||'';
   document.getElementById('dbadge').innerHTML='<span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span>';
+  var dt=document.getElementById('dtags');
+  dt.innerHTML=tagHTML(p);
+  dt.querySelectorAll('.tag').forEach(function(el){
+    el.onclick=function(){searchTag(el.dataset.t);};
+  });
   document.getElementById('dreason').textContent=p.reason||'';
   const img=document.getElementById('dimg');
   if(p.image){img.src=p.image;img.style.display='block';} else img.style.display='none';
@@ -303,6 +348,15 @@ function openDetail(p){
   highlight(p); syncRow(p);
 }
 function closeDetail(){document.getElementById('detail').classList.remove('open');}
+// ── 모바일 왼쪽 창(목록) 서랍 열고 닫기 ──
+function toggleSide(){
+  var s=document.getElementById('side'), open=s.classList.toggle('open');
+  document.getElementById('sideBackdrop').classList.toggle('show',open);
+}
+function closeSide(){
+  document.getElementById('side').classList.remove('open');
+  document.getElementById('sideBackdrop').classList.remove('show');
+}
 </script>
 </body>
 </html>
