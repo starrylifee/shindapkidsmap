@@ -1,0 +1,76 @@
+# -*- coding: utf-8 -*-
+import csv, json, re, sys
+from collections import Counter
+sys.stdout.reconfigure(encoding="utf-8")
+
+src = r"C:\Users\forin\Documents\카카오톡 받은 파일\Padlet -      -    .csv"
+rows = list(csv.DictReader(open(src, encoding="utf-8-sig", newline="")))
+
+def clean(s): return (s or "").strip()
+ADDR_RE = re.compile(r"(서울[특별시]*\s*[가-힣]*구[^\n,]*)")
+
+def extract_address(block):
+    if not block: return ""
+    for line in block.split("\n"):
+        m = ADDR_RE.search(line.strip())
+        if m: return m.group(1).strip()
+    m = ADDR_RE.search(block.replace("\n", " "))
+    return m.group(1).strip() if m else ""
+
+def name_from_title(title):
+    if not title: return ""
+    m = re.search(r"\(([^)]+)\)", title)
+    if m: return m.group(1).strip()
+    # 괄호 없음: 학급/학생이름 접두 제거
+    t = re.sub(r"^\s*(\d\s*학년\s*\d\s*반|\d\s*-\s*\d\s*반?)\s*", "", title)
+    parts = t.split()
+    if parts and re.fullmatch(r"[가-힣]{2,4}", parts[0]):
+        parts = parts[1:]  # 학생 이름 제거
+    return " ".join(parts).strip()
+
+def parse_body(body):
+    if not body or body == "데이터 없음": return "", "", False
+    if "이유" not in body and "장소" not in body:
+        return "", body.strip(), True  # 자유서술
+    parts = re.split(r"이유\s*:", body, maxsplit=1)
+    reason = parts[1].strip() if len(parts) > 1 else ""
+    head = re.sub(r"^.*?장소\s*:", "", parts[0], count=1, flags=re.S).strip()
+    return head, reason, False
+
+def get_class(title):
+    m = re.match(r"\s*(\d)\s*(?:학년\s*)?-?\s*(\d)\s*반?", title or "")
+    return f"{m.group(1)}-{m.group(2)}" if m else ""
+
+data, skipped = [], []
+for r in rows:
+    title, body, section = clean(r["제목"]), clean(r["본문"]), clean(r["섹션"])
+    if section == "안내사항" or title in ("데이터 없음", "ㅎㅎ"):
+        skipped.append(title); continue
+    block, reason, freeform = parse_body(body)
+    name = name_from_title(title) if (freeform or not block) else (name_from_title(title) or block.split("\n")[0].strip())
+    if not name: name = name_from_title(title)
+    addr = "" if freeform else extract_address(block)
+    if not name and not addr:
+        skipped.append(title); continue
+    img = ""  # 개인정보 보호: 사진 링크 제외
+    # 개인정보 보호: 본문 속 학생 이름 익명화
+    reason = re.sub(r"우혁이", "아이", reason)
+    # 지오코딩 힌트: 주소 우선, 없으면 장소명+동대문구
+    query = addr if addr else (name + " 동대문구" if "동대문" not in name else name)
+    data.append({
+        # 개인정보 보호: 반(class) 정보 제외 — 학년만 유지
+        "id": int(r["게시물 번호"]), "grade": section,
+        "name": name, "address": addr, "reason": reason, "query": query,
+        "image": img,
+    })
+
+print("추출:", len(data), "/ 스킵:", len(skipped))
+print("주소있음:", sum(1 for d in data if d["address"]), "/ 사진있음:", sum(1 for d in data if d["image"]))
+print("학년분포:", dict(Counter(d["grade"] for d in data)))
+print("\n남은 이름이상치(>25자):")
+for d in data:
+    if len(d["name"]) > 25: print("  ", d["id"], repr(d["name"])[:60])
+json.dump(data, open("data.json","w",encoding="utf-8"), ensure_ascii=False, indent=1)
+print("\n검수 샘플(주소없던 것들):")
+for d in data:
+    if d["id"] in (103,118,49,7,136): print(" ", d["id"], "name=",repr(d["name"]), "| query=",repr(d["query"]))

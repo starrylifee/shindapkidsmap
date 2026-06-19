@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>우리 동네 추천 장소 지도 · 신답초 학부모회</title>
+<style>
+  :root{ --g1:#e6194b;--g2:#3cb44b;--g3:#4363d8;--g4:#f58231;--g5:#911eb4;--g6:#008080; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#222}
+  #app{display:flex;height:100vh;overflow:hidden}
+  #side{width:340px;min-width:340px;display:flex;flex-direction:column;border-right:1px solid #e5e5e5;background:#fafafa}
+  header{padding:14px 16px;background:#2b2b40;color:#fff}
+  header h1{margin:0;font-size:17px}
+  header p{margin:4px 0 0;font-size:12px;color:#b9b9d4}
+  #filters{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid #eee;background:#fff}
+  .chip{cursor:pointer;border:1px solid #ccc;border-radius:14px;padding:3px 10px;font-size:12px;background:#fff;user-select:none}
+  .chip.active{color:#fff;border-color:transparent}
+  .chip[data-g="전체"].active{background:#2b2b40}
+  .chip[data-g="1학년"].active{background:var(--g1)} .chip[data-g="2학년"].active{background:var(--g2)}
+  .chip[data-g="3학년"].active{background:var(--g3)} .chip[data-g="4학년"].active{background:var(--g4)}
+  .chip[data-g="5학년"].active{background:var(--g5)} .chip[data-g="6학년"].active{background:var(--g6)}
+  #search{padding:8px 12px;border-bottom:1px solid #eee;background:#fff}
+  #search input{width:100%;padding:7px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px}
+  #list{overflow:auto;flex:1}
+  .item{padding:10px 14px;border-bottom:1px solid #eee;cursor:pointer}
+  .item:hover{background:#eef1ff}
+  .item .nm{font-weight:600;font-size:14px}
+  .item .meta{font-size:11px;color:#888;margin-top:2px}
+  .item .rs{font-size:12px;color:#555;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .badge{display:inline-block;font-size:10px;color:#fff;border-radius:8px;padding:1px 7px;margin-right:5px}
+  #map{flex:1;position:relative}
+  #status{position:absolute;top:10px;left:10px;z-index:5;background:rgba(43,43,64,.9);color:#fff;font-size:12px;padding:6px 12px;border-radius:6px}
+  #detail{position:absolute;top:0;right:0;width:330px;height:100%;background:#fff;box-shadow:-2px 0 12px rgba(0,0,0,.12);transform:translateX(100%);transition:.25s;z-index:6;overflow:auto}
+  #detail.open{transform:translateX(0)}
+  #detail .close{position:absolute;top:8px;right:10px;font-size:22px;cursor:pointer;color:#888;z-index:2}
+  #detail img{width:100%;max-height:230px;object-fit:cover;display:block;background:#eee}
+  #detail .body{padding:16px}
+  #detail h2{margin:0 0 6px;font-size:18px}
+  #detail .addr{font-size:13px;color:#1565c0;margin-bottom:10px}
+  #detail .reason{font-size:14px;line-height:1.6;white-space:pre-wrap;color:#333}
+  #setup{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;display:flex;align-items:center;justify-content:center}
+  #setup .box{background:#fff;padding:26px 30px;border-radius:10px;max-width:540px;font-size:14px;line-height:1.6}
+  #setup code{background:#f1f1f1;padding:1px 5px;border-radius:4px}
+  #setup input{width:100%;padding:8px;margin:10px 0;border:1px solid #ccc;border-radius:6px}
+  #setup button{padding:8px 18px;background:#2b2b40;color:#fff;border:0;border-radius:6px;cursor:pointer}
+  @media(max-width:720px){#side{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <header>
+      <h1>🗺️ 우리 동네 추천 장소</h1>
+      <p>신답초 학부모회 · Padlet 모음 (<span id="cnt">0</span>곳)</p>
+    </header>
+    <div id="filters"></div>
+    <div id="search"><input id="q" placeholder="장소·이유 검색..."/></div>
+    <div id="list"></div>
+  </div>
+  <div id="map">
+    <div id="status">불러오는 중...</div>
+    <div id="detail"><span class="close" onclick="closeDetail()">×</span>
+      <img id="dimg" alt=""/><div class="body">
+      <h2 id="dname"></h2><div class="addr" id="daddr"></div>
+      <div id="dbadge"></div><div class="reason" id="dreason"></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="setup">
+  <div class="box">
+    <h2>카카오맵 키 설정 (최초 1회)</h2>
+    <p>지도를 그리려면 무료 카카오 JavaScript 키가 필요해요.</p>
+    <ol>
+      <li><a href="https://developers.kakao.com" target="_blank">developers.kakao.com</a> 로그인 → <b>내 애플리케이션</b> 추가</li>
+      <li><b>앱 키 → JavaScript 키</b> 복사</li>
+      <li>앱 설정 → <b>플랫폼 → Web</b> 에 사용할 주소 등록<br>
+          (로컬 실행이면 <code>http://localhost:8000</code> 을 등록하고 아래 README 방식으로 여세요)</li>
+    </ol>
+    <input id="keyin" placeholder="여기에 JavaScript 키 붙여넣기"/>
+    <button onclick="saveKey()">지도 시작하기</button>
+    <p style="font-size:12px;color:#888">키는 이 브라우저에만 저장됩니다(localStorage).</p>
+  </div>
+</div>
+
+<script>
+const PLACES = __DATA__;
+const GRADES = ["1학년","2학년","3학년","4학년","5학년","6학년"];
+const GCOLOR = {"1학년":"#e6194b","2학년":"#3cb44b","3학년":"#4363d8","4학년":"#f58231","5학년":"#911eb4","6학년":"#008080"};
+let map, geocoder, ps, markers=[], activeGrade="전체", kw="";
+
+function saveKey(){
+  const k=document.getElementById('keyin').value.trim();
+  if(!k){alert('키를 입력하세요');return;}
+  localStorage.setItem('kakaoKey',k); location.reload();
+}
+function loadSDK(key){
+  const s=document.createElement('script');
+  s.src='https://dapi.kakao.com/v2/maps/sdk.js?appkey='+key+'&libraries=services,clusterer&autoload=false';
+  s.onload=function(){kakao.maps.load(init);};
+  s.onerror=function(){document.getElementById('status').textContent='SDK 로드 실패 — 키/도메인 확인';};
+  document.head.appendChild(s);
+}
+const KEY="9470a3877c2b2e0fcaf1c8520c8ae28a";
+if(KEY){document.getElementById('setup').style.display='none'; loadSDK(KEY);}
+
+function init(){
+  map=new kakao.maps.Map(document.getElementById('map'),{
+    center:new kakao.maps.LatLng(37.574,127.05), level:6});
+  geocoder=new kakao.maps.services.Geocoder();
+  ps=new kakao.maps.services.Places();
+  buildFilters(); render();
+  document.getElementById('q').addEventListener('input',function(e){kw=e.target.value.trim();render();});
+  geocodeAll();
+}
+
+function buildFilters(){
+  const f=document.getElementById('filters');
+  ["전체"].concat(GRADES).forEach(function(g){
+    const c=document.createElement('div');
+    c.className='chip'+(g==="전체"?' active':''); c.dataset.g=g; c.textContent=g;
+    c.onclick=function(){activeGrade=g;
+      document.querySelectorAll('.chip').forEach(function(x){x.classList.toggle('active',x.dataset.g===g);});
+      render();};
+    f.appendChild(c);
+  });
+  document.getElementById('cnt').textContent=PLACES.length;
+}
+function visible(p){
+  if(activeGrade!=="전체" && p.grade!==activeGrade) return false;
+  if(kw && !((p.name+p.reason+p.address).includes(kw))) return false;
+  return true;
+}
+function render(){
+  const list=document.getElementById('list'); list.innerHTML='';
+  PLACES.filter(visible).forEach(function(p){
+    const d=document.createElement('div'); d.className='item';
+    d.innerHTML='<div class="nm">'+esc(p.name)+'</div>'+
+      '<div class="meta"><span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span></div>'+
+      '<div class="rs">'+esc(p.reason||p.address||'')+'</div>';
+    d.onclick=function(){focusPlace(p);};
+    list.appendChild(d);
+  });
+  markers.forEach(function(m){ m.marker.setMap(visible(m.place)?map:null); });
+}
+function esc(s){return (s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+function geocodeAll(){
+  let i=0, ok=0;
+  const cache=JSON.parse(localStorage.getItem('geocache')||'{}');
+  function next(){
+    if(i>=PLACES.length){
+      localStorage.setItem('geocache',JSON.stringify(cache));
+      document.getElementById('status').textContent='표시 완료: '+ok+'곳 (전체 '+PLACES.length+')';
+      setTimeout(function(){document.getElementById('status').style.display='none';},2500);
+      return;
+    }
+    const p=PLACES[i++]; const ck=p.address||p.query;
+    document.getElementById('status').textContent='위치 찾는 중... '+i+'/'+PLACES.length;
+    if(cache[ck]){ place(p,cache[ck].lat,cache[ck].lng); ok++; return next(); }
+    const useKw=function(cb){ ps.keywordSearch(p.query,function(r,st){
+      if(st===kakao.maps.services.Status.OK&&r.length) cb(+r[0].y,+r[0].x); else cb(null);
+    });};
+    const done=function(lat,lng){ if(lat){cache[ck]={lat:lat,lng:lng}; place(p,lat,lng); ok++;} setTimeout(next,70); };
+    if(p.address){
+      geocoder.addressSearch(p.address,function(r,st){
+        if(st===kakao.maps.services.Status.OK&&r.length) done(+r[0].y,+r[0].x);
+        else useKw(done);
+      });
+    } else { useKw(done); }
+  }
+  next();
+}
+function place(p,lat,lng){
+  const pos=new kakao.maps.LatLng(lat,lng);
+  const marker=new kakao.maps.Marker({position:pos,map:visible(p)?map:null,
+    image:pin(GCOLOR[p.grade]||'#888')});
+  kakao.maps.event.addListener(marker,'click',function(){openDetail(p);});
+  markers.push({marker:marker,place:p,pos:pos});
+  p._pos=pos;
+}
+function pin(color){
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">'+
+    '<path d="M13 0C6 0 0 5.5 0 13c0 9 13 21 13 21s13-12 13-21C26 5.5 20 0 13 0z" fill="'+color+'"/>'+
+    '<circle cx="13" cy="13" r="5" fill="#fff"/></svg>';
+  return new kakao.maps.MarkerImage('data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg))),
+    new kakao.maps.Size(26,34),{offset:new kakao.maps.Point(13,34)});
+}
+function focusPlace(p){ if(p._pos){map.setLevel(4);map.panTo(p._pos);} openDetail(p); }
+function openDetail(p){
+  document.getElementById('dname').textContent=p.name;
+  document.getElementById('daddr').textContent=p.address||'';
+  document.getElementById('dbadge').innerHTML='<span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span>';
+  document.getElementById('dreason').textContent=p.reason||'';
+  const img=document.getElementById('dimg');
+  if(p.image){img.src=p.image;img.style.display='block';} else img.style.display='none';
+  document.getElementById('detail').classList.add('open');
+}
+function closeDetail(){document.getElementById('detail').classList.remove('open');}
+</script>
+</body>
+</html>
