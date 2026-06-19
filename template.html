@@ -111,7 +111,7 @@
 const PLACES = __DATA__;
 const GRADES = ["1학년","2학년","3학년","4학년","5학년","6학년"];
 const GCOLOR = {"1학년":"#e6194b","2학년":"#3cb44b","3학년":"#4363d8","4학년":"#f58231","5학년":"#911eb4","6학년":"#008080"};
-let map, geocoder, ps, markers=[], activeGrade="전체", kw="";
+let map, geocoder, ps, markers=[], activeGrade="전체", kw="", showFailedOnly=false;
 
 function saveKey(){
   const k=document.getElementById('keyin').value.trim();
@@ -156,10 +156,12 @@ function buildFilters(){
   document.getElementById('cnt').textContent=PLACES.length;
 }
 function visible(p){
+  if(showFailedOnly) return !!p._noloc;
   if(activeGrade!=="전체" && p.grade!==activeGrade) return false;
   if(kw && !((p.name+p.reason+p.address).includes(kw))) return false;
   return true;
 }
+function toggleFailed(e){ if(e) e.preventDefault(); showFailedOnly=!showFailedOnly; render(); }
 let view=[], itemEls=[], cursor=-1;
 function render(){
   const list=document.getElementById('list'); list.innerHTML='';
@@ -167,7 +169,8 @@ function render(){
   view.forEach(function(p,idx){
     const d=document.createElement('div'); d.className='item';
     d.innerHTML='<div class="nm">'+esc(p.name)+'</div>'+
-      '<div class="meta"><span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span></div>'+
+      '<div class="meta"><span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span>'+
+      (p._noloc?'<span class="badge" style="background:#e53935">❗위치 못 찾음</span>':'')+'</div>'+
       '<div class="rs">'+esc(p.reason||p.address||'')+'</div>';
     d.onclick=function(){selectIndex(idx);};
     list.appendChild(d); itemEls.push(d);
@@ -190,28 +193,49 @@ function syncRow(p){
 function esc(s){return (s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
 function geocodeAll(){
-  let i=0, ok=0;
+  let i=0, ok=0; const failed=[];
   const cache=JSON.parse(localStorage.getItem('geocache')||'{}');
+  const isOK=function(st){ return st===kakao.maps.services.Status.OK; };
+  function tryAddr(q,cb){ geocoder.addressSearch(q,function(r,st){ cb(isOK(st)&&r.length?[+r[0].y,+r[0].x]:null); }); }
+  function tryKw(q,cb){ if(!q){cb(null);return;} ps.keywordSearch(q,function(r,st){ cb(isOK(st)&&r.length?[+r[0].y,+r[0].x]:null); }); }
+  function geocodePlace(p,cb){
+    // 주소 → 장소명+동대문구 → 장소명 → 원쿼리 순서로 시도
+    const nameKw = (p.name && p.name.indexOf('동대문')<0) ? p.name+' 동대문구' : p.name;
+    const steps=[];
+    if(p.address) steps.push(function(c){ tryAddr(p.address,c); });
+    if(nameKw)    steps.push(function(c){ tryKw(nameKw,c); });
+    if(p.name && p.name!==nameKw) steps.push(function(c){ tryKw(p.name,c); });
+    if(p.query)   steps.push(function(c){ tryKw(p.query,c); });
+    let s=0;
+    (function run(){
+      if(s>=steps.length){ cb(null); return; }
+      steps[s++](function(res){ if(res) cb(res); else run(); });
+    })();
+  }
   function next(){
     if(i>=PLACES.length){
       localStorage.setItem('geocache',JSON.stringify(cache));
-      document.getElementById('status').textContent='표시 완료: '+ok+'곳 (전체 '+PLACES.length+')';
-      setTimeout(function(){document.getElementById('status').style.display='none';},2500);
+      const st=document.getElementById('status');
+      if(failed.length){
+        st.innerHTML='✅ 표시 '+ok+'곳 · <a href="#" id="failLink" style="color:#ffd180;font-weight:600">❗위치 못 찾음 '+failed.length+'곳 보기</a>';
+        st.style.display='block';
+        document.getElementById('failLink').onclick=toggleFailed;
+        console.log('[위치 못 찾은 장소]', failed.map(function(p){return p.id+' '+p.name+' | '+(p.address||'(주소없음)');}));
+      } else {
+        st.textContent='표시 완료: '+ok+'곳';
+        setTimeout(function(){st.style.display='none';},2500);
+      }
+      render();
       return;
     }
     const p=PLACES[i++]; const ck=p.address||p.query;
     document.getElementById('status').textContent='위치 찾는 중... '+i+'/'+PLACES.length;
     if(cache[ck]){ place(p,cache[ck].lat,cache[ck].lng); ok++; return next(); }
-    const useKw=function(cb){ ps.keywordSearch(p.query,function(r,st){
-      if(st===kakao.maps.services.Status.OK&&r.length) cb(+r[0].y,+r[0].x); else cb(null);
-    });};
-    const done=function(lat,lng){ if(lat){cache[ck]={lat:lat,lng:lng}; place(p,lat,lng); ok++;} setTimeout(next,70); };
-    if(p.address){
-      geocoder.addressSearch(p.address,function(r,st){
-        if(st===kakao.maps.services.Status.OK&&r.length) done(+r[0].y,+r[0].x);
-        else useKw(done);
-      });
-    } else { useKw(done); }
+    geocodePlace(p,function(res){
+      if(res){ cache[ck]={lat:res[0],lng:res[1]}; place(p,res[0],res[1]); ok++; }
+      else { p._noloc=true; failed.push(p); }
+      setTimeout(next,70);
+    });
   }
   next();
 }
