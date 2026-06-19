@@ -227,8 +227,10 @@ function setTag(tag){
   document.querySelectorAll('#tagbar .tchip').forEach(function(x){
     x.classList.toggle('active',x.dataset.t===activeTag);
   });
+  // 활성 칩을 바 가운데로 — 바 내부만 스크롤(scrollIntoView는 상위 컨테이너까지 밀려 지도가 시프트됨)
   const a=document.querySelector('#tagbar .tchip.active');
-  if(a) a.scrollIntoView({inline:'center',block:'nearest'});
+  if(a){ const bar=document.getElementById('tagbar');
+    bar.scrollTo({left:a.offsetLeft-(bar.clientWidth-a.offsetWidth)/2,behavior:'smooth'}); }
   closeDetail();
   if(window.innerWidth<=720) closeSide();
   render();
