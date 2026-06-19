@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-import csv, json, re, sys
+import csv, json, re, sys, os
 from collections import Counter
 sys.stdout.reconfigure(encoding="utf-8")
 
 src = r"C:\Users\forin\Documents\카카오톡 받은 파일\Padlet -      -    .csv"
 rows = list(csv.DictReader(open(src, encoding="utf-8-sig", newline="")))
+
+# 개인정보 익명화 치환 목록 (이름 등) — 깃에 올리지 않는 별도 파일에서 로드
+REDACT = {}
+if os.path.exists("pii_redactions.json"):
+    REDACT = json.load(open("pii_redactions.json", encoding="utf-8"))
 
 def clean(s): return (s or "").strip()
 ADDR_RE = re.compile(r"(서울[특별시]*\s*[가-힣]*구[^\n,]*)")
@@ -53,8 +58,9 @@ for r in rows:
     if not name and not addr:
         skipped.append(title); continue
     img = ""  # 개인정보 보호: 사진 링크 제외
-    # 개인정보 보호: 본문 속 학생 이름 익명화
-    reason = re.sub(r"우혁이", "아이", reason)
+    # 개인정보 보호: 본문 속 학생 이름 익명화 (목록은 pii_redactions.json)
+    for _bad, _good in REDACT.items():
+        reason = reason.replace(_bad, _good)
     # 지오코딩 힌트: 주소 우선, 없으면 장소명+동대문구
     query = addr if addr else (name + " 동대문구" if "동대문" not in name else name)
     data.append({

@@ -8,6 +8,9 @@ Padlet*.csv
 data.json
 parse.py
 
+# 개인정보 익명화 치환 목록 (학생 이름 포함)
+pii_redactions.json
+
 # 정리된 표 데이터 — 공개 배포가 필요 없으면 주석 해제해 제외
 # 정리된_추천장소.csv
 
