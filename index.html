@@ -36,6 +36,7 @@
   #list{overflow:auto;flex:1}
   .item{padding:10px 14px;border-bottom:1px solid #eee;cursor:pointer}
   .item:hover{background:#eef1ff}
+  .item.active{background:#dfe5ff;box-shadow:inset 4px 0 0 #2b2b40}
   .item .nm{font-weight:600;font-size:14px}
   .item .meta{font-size:11px;color:#888;margin-top:2px}
   .item .rs{font-size:12px;color:#555;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -123,6 +124,11 @@ function init(){
   ps=new kakao.maps.services.Places();
   buildFilters(); render();
   document.getElementById('q').addEventListener('input',function(e){kw=e.target.value.trim();render();});
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowDown'){ e.preventDefault(); selectIndex(Math.min(cursor+1, view.length-1)); }
+    else if(e.key==='ArrowUp'){ e.preventDefault(); selectIndex(Math.max(cursor-1, 0)); }
+    else if(e.key==='Escape'){ closeDetail(); }
+  });
   geocodeAll();
 }
 
@@ -143,17 +149,31 @@ function visible(p){
   if(kw && !((p.name+p.reason+p.address).includes(kw))) return false;
   return true;
 }
+let view=[], itemEls=[], cursor=-1;
 function render(){
   const list=document.getElementById('list'); list.innerHTML='';
-  PLACES.filter(visible).forEach(function(p){
+  view=PLACES.filter(visible); itemEls=[]; cursor=-1;
+  view.forEach(function(p,idx){
     const d=document.createElement('div'); d.className='item';
     d.innerHTML='<div class="nm">'+esc(p.name)+'</div>'+
       '<div class="meta"><span class="badge" style="background:'+(GCOLOR[p.grade]||'#888')+'">'+p.grade+'</span></div>'+
       '<div class="rs">'+esc(p.reason||p.address||'')+'</div>';
-    d.onclick=function(){focusPlace(p);};
-    list.appendChild(d);
+    d.onclick=function(){selectIndex(idx);};
+    list.appendChild(d); itemEls.push(d);
   });
   markers.forEach(function(m){ m.marker.setMap(visible(m.place)?map:null); });
+}
+function selectIndex(idx){
+  if(idx<0||idx>=view.length) return;
+  cursor=idx;
+  itemEls.forEach(function(el,k){ el.classList.toggle('active',k===idx); });
+  const el=itemEls[idx]; if(el) el.scrollIntoView({block:'nearest'});
+  focusPlace(view[idx]);
+}
+function syncRow(p){
+  const i=view.indexOf(p); cursor=i;
+  itemEls.forEach(function(el,k){ el.classList.toggle('active',k===i); });
+  if(i>=0 && itemEls[i]) itemEls[i].scrollIntoView({block:'nearest'});
 }
 function esc(s){return (s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
@@ -191,12 +211,23 @@ function place(p,lat,lng){
   markers.push({marker:marker,place:p,pos:pos});
   p._pos=pos;
 }
-function pin(color){
-  const svg='<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">'+
-    '<path d="M13 0C6 0 0 5.5 0 13c0 9 13 21 13 21s13-12 13-21C26 5.5 20 0 13 0z" fill="'+color+'"/>'+
+function pin(color,big){
+  const pad = big?3:0;
+  const vb = (-pad)+' '+(-pad)+' '+(26+pad*2)+' '+(34+pad*2);
+  const stroke = big?' stroke="#ffffff" stroke-width="2.5"':'';
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="'+vb+'">'+
+    '<path d="M13 0C6 0 0 5.5 0 13c0 9 13 21 13 21s13-12 13-21C26 5.5 20 0 13 0z" fill="'+color+'"'+stroke+'/>'+
     '<circle cx="13" cy="13" r="5" fill="#fff"/></svg>';
+  const w = big?42:26;
+  const h = w*(34+pad*2)/(26+pad*2);
   return new kakao.maps.MarkerImage('data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg))),
-    new kakao.maps.Size(26,34),{offset:new kakao.maps.Point(13,34)});
+    new kakao.maps.Size(w,h),{offset:new kakao.maps.Point(w/2, h*(34+pad)/(34+pad*2))});
+}
+let selected=null;
+function highlight(p){
+  if(selected){ selected.marker.setImage(pin(GCOLOR[selected.place.grade]||'#888',false)); selected.marker.setZIndex(1); }
+  const e=markers.find(function(m){return m.place===p;});
+  if(e){ e.marker.setImage(pin(GCOLOR[p.grade]||'#888',true)); e.marker.setZIndex(100); selected=e; }
 }
 function focusPlace(p){ if(p._pos){map.setLevel(4);map.panTo(p._pos);} openDetail(p); }
 function openDetail(p){
@@ -207,6 +238,7 @@ function openDetail(p){
   const img=document.getElementById('dimg');
   if(p.image){img.src=p.image;img.style.display='block';} else img.style.display='none';
   document.getElementById('detail').classList.add('open');
+  highlight(p); syncRow(p);
 }
 function closeDetail(){document.getElementById('detail').classList.remove('open');}
 </script>
